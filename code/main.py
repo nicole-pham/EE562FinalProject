@@ -12,24 +12,51 @@ from models.swinT import swin_tiny as swinT
 from models.resunet import ResUNet
 
 # Taken from https://github.com/Eladamar/fast_scnn/blob/master/metrics.py
-def pixel_accuracy(preds, mask):
-    if len(preds.shape) > 4:
-        preds = torch.sum(*[preds[i] for i in range(len(preds))])
+def pixel_accuracy(pred, mask):
+    '''
+    Gets how many pixels in the prediction matched labels
+
+    INPUTS:
+    pred: The labels your model predicted in shape nBatch x nClasses x Height x Width
+    mask: The real labels in shape nBatch x nClasses x Height x Width
+
+    OUTPUTS:
+    acc: The percentage of pixels that were identified correctly
+    '''
+
+    # Some models output a list of preds, like the swinT with the auxilary head
+    # We just sum those outputs
+    if isinstance(pred, list):
+        list_preds = [pred[i] for i in range(len(pred))]
+        pred = torch.sum(torch.stack(list_preds, dim=0), dim=0)
         
-    pred_argmax = torch.argmax(preds, axis=1)
+    # Each index in the class axis represents a label
+    # a 0 in the array means this pixel is NOT this class
+    # a 1 in the array means this pixel IS this class
+    # A pixel can only be one class
+    # Therefore, argmax finds the appropriate class index, which is our pixel label
+    pred_argmax = torch.argmax(pred, axis=1)
     mask_argmax = torch.argmax(mask, axis=1)
+
+    # The accuracy sum is all the places where the class labels matched
     acc_sum = torch.sum(pred_argmax == mask_argmax).item()
-    # divide by batch size
-    acc_mean = acc_sum / preds.shape[0]
-    image_size = preds.shape[2] * preds.shape[3]
+
+    # divide by batch size to get percentage
+    acc_mean = acc_sum / pred.shape[0]
+    image_size = pred.shape[2] * pred.shape[3]
     acc = float(acc_mean) / (image_size + 1e-10)
     return acc
 
 # Code reference: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 def train(dataloader, model, loss_fn, optimizer, success_metric):
+    '''
+    Function for training our model.
+
+    INPUTS:
+    '''
     size = len(dataloader.dataset)
     model.train()
-    model.to("cuda")
+
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
 
