@@ -3,6 +3,8 @@
 # Date: 2019-03-25
 # Copyright (c) 2017
 ###########################################################################
+# MODEL FROM https://github.com/Tramac/Fast-SCNN-pytorch/blob/master/models/fast_scnn.py
+
 
 """Fast Segmentation Convolutional Neural Network"""
 import os

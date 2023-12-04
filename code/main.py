@@ -7,11 +7,15 @@ import numpy as np
 import datetime
 
 from dataset import PotsdamDataset
-from FastSCNN import FastSCNN
+from models.FastSCNN import FastSCNN
 from models.swinT import swin_tiny as swinT
+from models.resunet import ResUNet
+
 # Taken from https://github.com/Eladamar/fast_scnn/blob/master/metrics.py
 def pixel_accuracy(preds, mask):
-    preds = preds[0]
+    if len(preds.shape) > 4:
+        preds = torch.sum(*[preds[i] for i in range(len(preds))])
+        
     pred_argmax = torch.argmax(preds, axis=1)
     mask_argmax = torch.argmax(mask, axis=1)
     acc_sum = torch.sum(pred_argmax == mask_argmax).item()
@@ -25,6 +29,7 @@ def pixel_accuracy(preds, mask):
 def train(dataloader, model, loss_fn, optimizer, success_metric):
     size = len(dataloader.dataset)
     model.train()
+    model.to("cuda")
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
 
@@ -37,7 +42,7 @@ def train(dataloader, model, loss_fn, optimizer, success_metric):
                 loss += loss_fn(pred[i], y)
         else:
             loss = loss_fn(pred, y)
-            
+                
         # Backpropagation
         loss.backward()
         optimizer.step()
@@ -49,7 +54,7 @@ def train(dataloader, model, loss_fn, optimizer, success_metric):
             print(f"loss: {loss:>7f}  score: {score:>7f}  [{current:>5d}/{size:>5d}]")
             
     # from https://github.com/Eladamar/fast_scnn/blob/master/main.py
-    torch.save(model.state_dict(), 'checkpoints/' + model.__class__.__name__ + datetime.datetime.today().strftime("%m_%d"))
+    torch.save(model.state_dict(), 'checkpoints/' + model.__class__.__name__ + datetime.datetime.today().strftime("%m_%d_%h"))
 
 def test(dataloader, model, loss_fn, success_metric):
     size = len(dataloader.dataset)
@@ -69,7 +74,7 @@ def test(dataloader, model, loss_fn, success_metric):
 
 # code heavily borrowed from https://github.com/Eladamar/fast_scnn/blob/master/main.py
 epochs = 1 # changed epochs from 100 to 10 for time
-batch_size = 8 # increased batch size (images are 256x256 instead of 6000x6000)
+batch_size = 2 # increased batch size (images are 256x256 instead of 6000x6000)
 learning_rate = 1e-3
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.cuda.empty_cache()
@@ -87,8 +92,8 @@ dl_test = DataLoader(ds_test, batch_size, shuffle=True)
 
 # Code reference: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 #model = FastSCNN(num_classes=6)
-
-model = swinT(nclass=6, pretrained=True, aux=True, head="mlphead", edge_aux=False)
+#model = swinT(nclass=6, pretrained=True, aux=True, head="mlphead", edge_aux=False)
+model = ResUNet()
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 loss_fn = CrossEntropyLoss()

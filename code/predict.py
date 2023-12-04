@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 
-from FastSCNN import FastSCNN
+from models.FastSCNN import FastSCNN
 from models.swinT import swin_tiny as swinT
 
 import numpy as np
