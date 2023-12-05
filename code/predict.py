@@ -4,6 +4,7 @@ import torch
 
 from models.FastSCNN import FastSCNN
 from models.swinT import swin_tiny as swinT
+from models.resunet import ResUNet
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -64,7 +65,7 @@ def predict():
         
     transformed_img, transformed_mask = affine_transform((img, mask))
     transformed_img = torch.tensor(transformed_img.copy() / 255.0)
-    transformed_img = normal_transform(transformed_img)
+    normal_transformed_img = normal_transform(transformed_img)
     transformed_mask = torch.tensor(transformed_mask.copy(), dtype=torch.float64)
     
     fig = plt.figure(1)
@@ -73,16 +74,17 @@ def predict():
     canvas.print_figure('test-pic.png')
     
     #model = FastSCNN(args.num_classes).to(device)
-    model = swinT(nclass=args.num_classes, pretrained=True, aux=True, head="mlphead", edge_aux=False)
+    #model = swinT(nclass=args.num_classes, pretrained=True, aux=True, head="mlphead", edge_aux=False)
+    model = ResUNet()
 
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+    model.load_state_dict(torch.load(args.checkpoint, map_location=device), strict=False)
     # model = torch.load(args.checkpoint, map_location=device)
     print('Finished loading model!')
     model.eval()
     model.double()
     with torch.no_grad():
-        outputs = model(transformed_img.unsqueeze(0).to(device))
-    pred = torch.argmax(outputs[0], 1).squeeze(0).to(device)
+        outputs = model(normal_transformed_img.unsqueeze(0).to(device))
+    pred = torch.argmax(outputs[0], 0).to(device)
     
     transformed_mask = np.argmax(transformed_mask, 0)
     

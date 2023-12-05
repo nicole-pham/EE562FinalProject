@@ -19,7 +19,9 @@ class ResUNet(nn.Module):
                       out_channels=self.nFilters,
                       kernel_size=1,
                       dilation=1,
-                      stride=1)
+                      stride=1),
+            nn.BatchNorm2d(self.nFilters) # actual code uses a batch norm for its first conv layer, but paper doesn't reference it
+            # https://github.com/feevos/resuneta/blob/master/models/resunet_d6_encoder.py#L36
         ])
         
         self.layer_2 = nn.Sequential(*[
@@ -78,7 +80,7 @@ class ResUNet(nn.Module):
         
         self.layer_14 = nn.Sequential(*[
             nn.Upsample(scale_factor=2),
-            Downsample(512)
+            UpConv(512)
         ])
         
         self.layer_15_16 = nn.Sequential(*[
@@ -88,7 +90,7 @@ class ResUNet(nn.Module):
         
         self.layer_17 = nn.Sequential(*[
             nn.Upsample(scale_factor=2),
-            Downsample(256)
+            UpConv(256)
         ])
         
         self.layer_18_19 = nn.Sequential(*[
@@ -98,7 +100,7 @@ class ResUNet(nn.Module):
         
         self.layer_20 = nn.Sequential(*[
             nn.Upsample(scale_factor=2),
-            Downsample(128)
+            UpConv(128)
         ])
         
         self.layer_21_22 = nn.Sequential(*[
@@ -108,7 +110,7 @@ class ResUNet(nn.Module):
         
         self.layer_23 = nn.Sequential(*[
             nn.Upsample(scale_factor=2),
-            Downsample(64)
+            UpConv(64)
         ])
         
         self.layer_24_25 = nn.Sequential(*[
@@ -118,7 +120,7 @@ class ResUNet(nn.Module):
         
         self.layer_26 = nn.Sequential(*[
             nn.Upsample(scale_factor=2),
-            Downsample(32)
+            UpConv(32)
         ])
         
         self.layer_27_28 = nn.Sequential(*[
@@ -205,7 +207,8 @@ class Combine(nn.Module):
         
         self.relu = nn.ReLU()
         self.conv2d = nn.Conv2d(in_channels=self.features * 2, out_channels=self.features, kernel_size=1, dilation=1, stride=1)
-        
+        self.norm = nn.BatchNorm2d(self.features)
+
     def forward(self, x):
         input1 = x[0]
         input2 = x[1]
@@ -213,9 +216,9 @@ class Combine(nn.Module):
         input1 = self.relu(input1)
         input2 = torch.cat((input1, input2), dim=1)
         
-        return self.conv2d(input2)
+        return self.norm(self.conv2d(input2)) # batch norm conv, equivalent to Conv2dNormed in original code
 
-class Downsample(nn.Module):
+class UpConv(nn.Module):
     def __init__(self, features):
         super().__init__()
         self.output_features = features
@@ -237,11 +240,11 @@ class PyramidPooling(nn.Module):
     Concat Upsample and ResBlock
     Conv2D features k=1
     
-    I noticed that the code here does not have a stride of 2:
-    https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/pooling/psp_pooling.py#L8
+    I noticed that the code here does not have a stride of 2 as referenced by the paper, but upsamples the low layer:
+    https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/pooling/psp_pooling.py#L22
 
     It uses a stride of 1 with the normed conv2d:
-    https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/layers/conv2Dnormed.py#L2
+    https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/layers/conv2Dnormed.py#L13
     '''
 
     def __init__(self, nFeatures, nChannels=3, depth=6):
@@ -261,7 +264,7 @@ class PyramidPooling(nn.Module):
         
         self.layer_D = nn.Sequential(*[
             nn.MaxPool2d(kernel_size=2, stride=2),
-            #https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/layers/scale.py#L46
+            #https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/layers/scale.py#L66
             # They want to use Bilinear, but the actual implementation uses nearest bc programming problems. I'll do bilinear
             nn.Upsample(scale_factor=2)
         ])
@@ -272,11 +275,15 @@ class PyramidPooling(nn.Module):
                                   dilation=1,
                                   stride=1)
         
+        # Paper doesn't use Conv2dNormed, but code does:
+        # https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/pooling/psp_pooling.py#L24
+        self.norm = nn.BatchNorm2d(self.nFeatures)
+        
     def forward(self, x):
         layer_b = self.layer_B(x)
         layer_d = self.layer_D(layer_b)
         concat = torch.cat((layer_d, layer_b), dim=1)
-        out = self.conv_out(concat)
+        out = self.norm(self.conv_out(concat)) # batch norm conv, equivalent to Conv2dNormed in original code
         return out
         
         
