@@ -17,7 +17,7 @@ def pixel_accuracy(pred, mask):
     Gets how many pixels in the prediction matched labels
 
     INPUTS:
-    pred: The labels your model predicted in shape nBatch x nClasses x Height x Width
+    pred: The labels your model predicted in shape nBatch x nClasses x Height x Width. May be a list of predictions as well.
     mask: The real labels in shape nBatch x nClasses x Height x Width
 
     OUTPUTS:
@@ -100,30 +100,32 @@ def test(dataloader, model, loss_fn, success_metric):
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n score: {score:>7f} \n")
 
 # code heavily borrowed from https://github.com/Eladamar/fast_scnn/blob/master/main.py
-epochs = 1 # changed epochs from 100 to 10 for time
-batch_size = 2 # increased batch size (images are 256x256 instead of 6000x6000)
+
+epochs = 10 # changed epochs from 100 to 10 for time
+batch_size = 2
 learning_rate = 1e-3
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-torch.cuda.empty_cache()
+torch.cuda.empty_cache() # sometimes pytorch doesn't do clear cache between runs, this is a failsafe
 
+# Path to your images. Can use paths relative to your working dir or absolute paths
 train_image_path = '../../data/Potsdam_6k/training/imgs'
-train_label_path = '../../data/Potsdam_6k/training/masks'
 test_image_path = '../../data/Potsdam_6k/validation/imgs'
-test_label_path = '../../data/Potsdam_6k/validation/masks'
 
-ds_train = PotsdamDataset(train_image_path, train_label_path)
-ds_test = PotsdamDataset(test_image_path, test_label_path)
+ds_train = PotsdamDataset(train_image_path) # do transform the training data
+ds_test = PotsdamDataset(test_image_path, False) # do not transform the testing data aside from normalizing
 
-dl_train = DataLoader(ds_train, batch_size, shuffle=True)
-dl_test = DataLoader(ds_test, batch_size, shuffle=True)
+dl_train = DataLoader(ds_train, batch_size, shuffle=True) # Train images in random order 
+dl_test = DataLoader(ds_test, batch_size, shuffle=False) # Test images in fixed order
+
+
+# Leave the model you want to test uncommented
+#model = FastSCNN(num_classes=6)
+model = swinT(nclass=6, pretrained=True, aux=True, head="mlphead", edge_aux=False)
+#model = ResUNet()
 
 # Code reference: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
-#model = FastSCNN(num_classes=6)
-#model = swinT(nclass=6, pretrained=True, aux=True, head="mlphead", edge_aux=False)
-model = ResUNet()
-
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-loss_fn = CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate) # adam optimizer is pretty standard nowadays
+loss_fn = CrossEntropyLoss() # all models use cross entropy loss as their loss function
 success_metric = pixel_accuracy
 
 model.double()

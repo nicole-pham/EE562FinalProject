@@ -7,6 +7,9 @@ import math
 
 # mx code adapted to pytorch from https://github.com/feevos/resuneta/tree/master
 class ResUNet(nn.Module):
+    '''
+    
+    '''
     def __init__(self, num_classes=6, depth=6, nFilters=32):
         super().__init__()
         self.num_classes = num_classes
@@ -24,8 +27,9 @@ class ResUNet(nn.Module):
             # https://github.com/feevos/resuneta/blob/master/models/resunet_d6_encoder.py#L36
         ])
         
+        # The dilations in the code did not match what was in the paper. They use 1, 3, 15 often instead of 1, 3, 15, 31 schemes like in the paper
         self.layer_2 = nn.Sequential(*[
-            ResBlock(features=self.nFilters, kernel=3, dilation=[1], stride=1)
+            ResBlock(features=self.nFilters, kernel=3, dilation=[1, 3, 15], stride=1)
         ])
         
         self.layer_3_4 = nn.Sequential(*[
@@ -34,7 +38,7 @@ class ResUNet(nn.Module):
                       kernel_size=1,
                       dilation=1,
                       stride=2),
-            ResBlock(features=self.nFilters * 2 ** 1, kernel=3, dilation=[1], stride=1)
+            ResBlock(features=self.nFilters * 2 ** 1, kernel=3, dilation=[1, 3, 15], stride=1)
         ])
         
         self.layer_5_6 = nn.Sequential(*[
@@ -43,7 +47,7 @@ class ResUNet(nn.Module):
                       kernel_size=1,
                       dilation=1,
                       stride=2),
-            ResBlock(features=self.nFilters * 2 ** 2, kernel=3, dilation=[1], stride=1)
+            ResBlock(features=self.nFilters * 2 ** 2, kernel=3, dilation=[1, 3, 15], stride=1)
         ])
         
         
@@ -53,7 +57,7 @@ class ResUNet(nn.Module):
                       kernel_size=1,
                       dilation=1,
                       stride=2),
-            ResBlock(features=self.nFilters * 2 ** 3, kernel=3, dilation=[1], stride=1)
+            ResBlock(features=self.nFilters * 2 ** 3, kernel=3, dilation=[1, 3], stride=1)
         ])
                 
         self.layer_9_10 = nn.Sequential(*[
@@ -291,7 +295,7 @@ class ResBlock(nn.Module):
     '''
     Image reference for ResBlock: https://www.researchgate.net/figure/Flowchart-of-the-resblock-Each-resblock-is-composed-of-a-batch-normalization-a_fig2_330460151
     '''
-    def __init__(self, features, kernel = 3, dilation=[1], stride=1, device="cuda"):
+    def __init__(self, features, kernel = 3, dilation=[1, 3, 15], stride=1, device="cuda"):
         super().__init__()
         self.f = features
         self.kernel = kernel
@@ -299,13 +303,24 @@ class ResBlock(nn.Module):
         self.stride = stride
         self.device = device
         
+
+        # NOTE: It's coincidental the dilation is the same as the padding
+        # Our kernel size is always 3, which lets the shape math work out...
         normal_sides = [
             nn.BatchNorm2d(self.f),
             nn.ReLU(),
-            nn.Conv2d(self.f, self.f, kernel_size=self.kernel, dilation=self.dilation[0], stride=self.stride, padding=self.dilation[0]),
+            nn.Conv2d(self.f, self.f,
+                      kernel_size=self.kernel,
+                      dilation=self.dilation[0],
+                      stride=self.stride,
+                      padding=self.dilation[0]),
             nn.BatchNorm2d(self.f),
             nn.ReLU(),
-            nn.Conv2d(self.f, self.f, kernel_size=self.kernel, dilation=self.dilation[0], stride=self.stride, padding=self.dilation[0])
+            nn.Conv2d(self.f, self.f,
+                      kernel_size=self.kernel,
+                      dilation=self.dilation[0],
+                      stride=self.stride,
+                      padding=self.dilation[0])
         ]
         
         for i in range(1, len(dilation)):
@@ -322,7 +337,7 @@ class ResBlock(nn.Module):
         if isinstance(normal_sides, (list)):
             self.normal_side = nn.Sequential(*nn.ModuleList(normal_sides)) # MUST USE MODULE LIST OR WEIGHTS WON'T MOVE TO DEVICE
         else:
-            self.normal_side = [nn.Sequential(*nn.ModuleList([normal_sides[i] for i in range(len(normal_sides))]))]
+            self.normal_side = [nn.Sequential(*nn.ModuleList(normal_sides[i])) for i in range(len(normal_sides))]
         
         
         skip_sides = [
@@ -331,7 +346,7 @@ class ResBlock(nn.Module):
                       kernel_size=self.kernel,
                       dilation=self.dilation[0],
                       stride=self.stride,
-                      padding=1),
+                      padding=self.dilation[0]),
             nn.BatchNorm2d(self.f)
         ]
         
@@ -347,16 +362,22 @@ class ResBlock(nn.Module):
         ]))
         
         if isinstance(skip_sides, (list)):
-            self.skip_side = nn.Sequential(*nn.ModuleList(skip_sides))
+            self.skip_side = nn.Sequential(*nn.ModuleList(skip_sides)) # MUST USE MODULE LIST OR WEIGHTS WON'T MOVE TO DEVICE
         else:
-            self.skip_side = [nn.Sequential(*nn.ModuleList([skip_sides[i] for i in range(len(skip_sides))]))]
+            self.skip_side = [nn.Sequential(*nn.ModuleList(skip_sides[i])) for i in range(len(skip_sides))]
     
     def forward(self, x):
         #normal_out = torch.cat(*[self.normal_side[i](x) for i in range(len(self.dilation))], dim=0)
         #skip_out = torch.cat([self.skip_side[i](x) for i in range(len(self.dilation))], dim=0)
         
-        normal_out = self.normal_side(x)
-        skip_out = self.skip_side(x)
+        # Make all dilations sizes sides and add them together
+        normal_out = self.normal_side[0](x)
+        skip_out = self.skip_side[0](x)
+        
+        for i in range(1, len(self.dilation)):
+            normal_out += self.normal_side[i](x)
+            skip_out += self.skip_side[i](x)
+
         add = normal_out + skip_out
         
         return add

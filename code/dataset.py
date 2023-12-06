@@ -68,12 +68,22 @@ class PotsdamDataset(Dataset):
         mask = np.load(mask_path)
 
         if self.transform:
+            # do the flipping transforms
             img, mask = self.transform(img, mask)
         else:
+            # only normalize the image
             img = torch.tensor(img, dtype=torch.float64)
             mask = torch.tensor(mask, dtype=torch.float64)
-        
-        
+
+            # Essentially doing torch.ToTensor without changing dims since they're already in CxHxW
+            img = torch.tensor(img / 255.0)
+
+            normal_transform = transforms.Compose([
+                transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
+            ])
+
+            img = normal_transform(img)
+
         return img, mask # img shape: colorsxheightxwidth, mask shape: class_nxheightxwidth
     
     def transform(self, img, mask):
