@@ -335,9 +335,9 @@ class ResBlock(nn.Module):
         
 
         if isinstance(normal_sides, (list)):
-            self.normal_side = nn.Sequential(*nn.ModuleList(normal_sides)) # MUST USE MODULE LIST OR WEIGHTS WON'T MOVE TO DEVICE
+            self.normal_side = nn.ModuleList([nn.Sequential(*nn.ModuleList(normal_sides))]) # MUST USE MODULE LIST OR WEIGHTS WON'T MOVE TO DEVICE
         else:
-            self.normal_side = [nn.Sequential(*nn.ModuleList(normal_sides[i])) for i in range(len(normal_sides))]
+            self.normal_side = nn.ModuleList([nn.Sequential(*nn.ModuleList(normal_sides[i])) for i in range(len(normal_sides))])
         
         
         skip_sides = [
@@ -362,15 +362,16 @@ class ResBlock(nn.Module):
         ]))
         
         if isinstance(skip_sides, (list)):
-            self.skip_side = nn.Sequential(*nn.ModuleList(skip_sides)) # MUST USE MODULE LIST OR WEIGHTS WON'T MOVE TO DEVICE
+            self.skip_side = nn.ModuleList([nn.Sequential(*nn.ModuleList(skip_sides))]) # MUST USE MODULE LIST OR WEIGHTS WON'T MOVE TO DEVICE
         else:
-            self.skip_side = [nn.Sequential(*nn.ModuleList(skip_sides[i])) for i in range(len(skip_sides))]
+            self.skip_side = nn.ModuleList([nn.Sequential(*nn.ModuleList(skip_sides[i])) for i in range(len(skip_sides))])
     
     def forward(self, x):
         #normal_out = torch.cat(*[self.normal_side[i](x) for i in range(len(self.dilation))], dim=0)
         #skip_out = torch.cat([self.skip_side[i](x) for i in range(len(self.dilation))], dim=0)
         
         # Make all dilations sizes sides and add them together
+        what = self.normal_side[0]
         normal_out = self.normal_side[0](x)
         skip_out = self.skip_side[0](x)
         
