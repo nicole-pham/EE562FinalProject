@@ -99,7 +99,8 @@ class PotsdamDataset(Dataset):
         transformed_mask: nClassesxHeightxWidth ndarray of the labels with matching img transform
         '''
         affine_transform = transforms.Compose([
-            RandomHorizontalFlip(0.5)
+            RandomHorizontalFlip(0.5),
+            RandomVerticalFlip(0.5)
         ])
         
         normal_transform = transforms.Compose([
@@ -198,8 +199,8 @@ class RandomVerticalFlip:
         img, mask = imgmask
         rand = random.random()
         if rand < self.prob:
-            img = np.flip(img, axis=3)
-            mask = np.flip(mask, axis=3)
+            img = np.flip(img, axis=1)
+            mask = np.flip(mask, axis=1)
 
         return img, mask
 
