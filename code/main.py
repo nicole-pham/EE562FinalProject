@@ -120,19 +120,18 @@ dl_test = DataLoader(ds_test, batch_size, shuffle=False) # Test images in fixed 
 
 # Leave the model you want to test uncommented
 #model = FastSCNN(num_classes=6)
-model = swinT(nclass=6, pretrained=True, aux=True, head="mlphead", edge_aux=False)
-#model = ResUNet()
+#model = swinT(nclass=6, pretrained=True, aux=True, head="mlphead", edge_aux=False)
+model = ResUNet()
 
 # Code reference: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate) # adam optimizer is pretty standard nowadays
-loss_fn = CrossEntropyLoss() # all models use cross entropy loss as their loss function
+loss_fn = CrossEntropyLoss() # all models to use cross entropy loss as their loss function
 success_metric = pixel_accuracy
 
 model.double()
 model.to(device)
 for epoch in range(epochs):
-    if epoch % 10 == 0:
-        print('epoch', epoch+1, 'of', epochs)
-        train(dl_train, model, loss_fn, optimizer, success_metric)
-        test(dl_test, model, loss_fn, success_metric)
+    print('epoch', epoch+1, 'of', epochs)
+    train(dl_train, model, loss_fn, optimizer, success_metric)
+    #test(dl_test, model, loss_fn, success_metric)
 

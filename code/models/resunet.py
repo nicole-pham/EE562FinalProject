@@ -78,9 +78,7 @@ class ResUNet(nn.Module):
             ResBlock(features=self.nFilters * 2 ** 5, kernel=3, dilation=[1], stride=1)
         ])
         
-        # We have 5 stride=2 layers and 5 upsampling layers. But psp also has a stride=2, so we need 7
-        # upsampling layers... But where does the 6th one go? 
-        self.psp_13 = PyramidPooling(self.nFilters * 2 ** 5, nChannels=self.nFilters * 2 ** 5)
+        self.psp_13 = PSP_Pooling(self.nFilters * 2 ** 5)
         
         self.layer_14 = nn.Sequential(*[
             nn.Upsample(scale_factor=2),
@@ -138,11 +136,11 @@ class ResUNet(nn.Module):
         ])
         
         self.layer_30_31 = nn.Sequential(*[
-            PyramidPooling(32, nChannels=32),
+            PSP_Pooling(32),
             nn.Conv2d(in_channels=32, out_channels=self.num_classes, kernel_size=1, dilation=1, stride=1)
         ])
         
-        self.out = nn.Softmax()
+        self.out = nn.Softmax(dim=1)
         '''
         PSEUDOCODE
         
@@ -233,9 +231,164 @@ class UpConv(nn.Module):
         
     def forward(self, x):
         return self.conv2d(x)
-# ResUNet uses Pyramid Pooling https://arxiv.org/pdf/1612.01105.pdf
-class PyramidPooling(nn.Module):
+    
+class PSP_Pooling(nn.Module):
     '''
+    MOSTLY NOT MY CODE ASIDE FROM VERY MINOR CHANGES
+    Translated algorithm from mxnet to pytorch: https://github.com/feevos/resuneta/blob/master/nn/pooling/psp_pooling.py
+    '''
+    def __init__(self, nfilters, depth = 4):
+        super().__init__()
+                
+        
+        self.nfilters = nfilters
+        self.depth = depth 
+        
+        # This is used as a container (list) of layers
+        self.convs = nn.Sequential()
+        for _ in range(depth):
+            self.convs.add_module(str(_), nn.Sequential(
+                nn.Conv2d(self.nfilters, self.nfilters//self.depth,kernel_size=1,padding=0),
+                nn.BatchNorm2d(self.nfilters//self.depth),
+                nn.ReLU()
+                ))
+            
+        self.conv_norm_final = nn.Sequential(
+                        nn.Conv2d(self.nfilters * 2, self.nfilters, 1),
+                        nn.BatchNorm2d(self.nfilters),
+                        nn.ReLU()
+                        )
+        
+        self.pool = nn.AdaptiveMaxPool2d(1)
+
+
+    # ******** Utilities functions to avoid calling infer_shape ****************
+    def HalfSplit(self,_a):
+        """
+        Returns a list of half split arrays. Usefull for HalfPoolling 
+        """
+        b  = torch.split(_a,_a.shape[2] // 2, dim=2) # Split First dimension 
+        c1 = torch.split(b[0], b[0].shape[3] // 2, dim=3) # Split 2nd dimension
+        c2 = torch.split(b[1], b[1].shape[3] // 2, dim = 3) # Split 2nd dimension
+    
+    
+        d11 = c1[0]
+        d12 = c1[1]
+    
+        d21 = c2[0]
+        d22 = c2[1]
+    
+        return [d11,d12,d21,d22]
+    
+    
+    def QuarterStitch(self,_Dss):
+        """
+        INPUT:
+            A list of [d11,d12,d21,d22] block matrices.
+        OUTPUT:
+            A single matrix joined of these submatrices
+        """
+    
+        temp1 = torch.cat((_Dss[0],_Dss[1]),dim=-1)
+        temp2 = torch.cat((_Dss[2],_Dss[3]),dim=-1)
+        result = torch.cat((temp1,temp2),dim=2)
+
+        return result
+    
+    
+    def HalfPooling(self,_a):
+        """
+        Tested, produces consinstent results.
+        """
+        Ds = self.HalfSplit(_a)
+    
+        Dss = []
+        for x in Ds:
+            Dss += [torch.mul(torch.ones_like(x) , self.pool(x))]
+     
+        return self.QuarterStitch(Dss)    
+      
+    
+
+    #from functools import lru_cache
+    #@lru_cache(maxsize=None) # This increases by a LOT the performance 
+    # Can't make it to work with symbol though (yet)
+    def SplitPooling(self, _a, depth):
+        #print("Calculating F", "(", depth, ")\n")
+        """
+        A recursive function that produces the Pooling you want - in particular depth (powers of 2)
+        """
+        if depth==1:
+            return self.HalfPooling(_a)
+        else :
+            D = self.HalfSplit(_a)
+            return self.QuarterStitch([self.SplitPooling(d,depth-1) for d in D])
+
+        
+    # ***********************************************************************************  
+
+    def forward(self,_input):
+
+        p  = [_input]
+        # 1st:: Global Max Pooling . 
+        p += [self.convs[0](torch.mul(torch.ones_like(_input) , self.pool(_input)))]
+        p += [self.convs[d](self.SplitPooling(_input,d)) for d in range(1,self.depth)]
+        out = torch.cat(p,dim=1)
+        out = self.conv_norm_final(out)
+
+        return out
+    
+'''
+Here lies some previous disasterous attempts to figure out how to write PSP pooling myself.
+I ultimately just translated their code from mxnet to pytorch
+
+# ResUNet uses Pyramid Pooling https://arxiv.org/pdf/1612.01105.pdf]
+class PyramidPooling(nn.Module):
+    def __init__(self, features, out_channels, size):
+        super(PyramidPooling, self).__init__()
+        self.f = features
+
+        self.conv1 = nn.Sequential(nn.Conv2d(self.f, self.f, kernel_size=1),
+                                    nn.BatchNorm2d(self.f),
+                                    nn.ReLU())
+        self.conv2 = nn.Sequential(nn.Conv2d(self.f, self.f // 2, kernel_size=1),
+                                    nn.BatchNorm2d(self.f // 2),
+                                    nn.ReLU())
+        self.conv3 = nn.Sequential(nn.Conv2d(self.f, self.f // 4, kernel_size=1),
+                                    nn.BatchNorm2d(self.f // 4),
+                                    nn.ReLU())
+        self.conv4 = nn.Sequential(nn.Conv2d(self.f, self.f // 8, kernel_size=1),
+                                    nn.BatchNorm2d(self.f // 8),
+                                    nn.ReLU())
+        
+        self.out = nn.Sequential(nn.Conv2d(self.f * 2, out_channels, kernel_size=1),
+                                    nn.BatchNorm2d(out_channels),
+                                    nn.ReLU())
+        
+        # The paper claimed to have split along the fe
+        self.pool = nn.MaxPool2d(size)
+    def forward(self, x):
+        quarter_split = x.split()
+        # pool and reconstruct shape
+        feat1 = torch.cat([torch.cat([self.pool(quarter_split[i][j]) for j in range(len(quarter_split))], dim=3) for i in range(len(half_split))], dim = 2)
+        feat2 = torch.cat([torch.cat([self.pool(quarter_split[i][j]) for j in range(len(quarter_split))], dim=3) for i in range(len(half_split))], dim = 2)
+        feat3 = torch.cat([torch.cat([self.pool(quarter_split[i][j]) for j in range(len(quarter_split))], dim=3) for i in range(len(half_split))], dim = 2)
+        feat4 = torch.cat([torch.cat([self.pool(quarter_split[i][j]) for j in range(len(quarter_split))], dim=3) for i in range(len(half_split))], dim = 2)
+        
+        
+        
+        x = torch.cat([x, feat1, feat2, feat3, feat4], dim=1)
+                
+        return x
+    
+    def split(self, x):
+        # split images
+        half_split = torch.split(x, int(x.shape[2] / 2), dim=2)
+        quarter_split = [torch.split(half_split[i], int(x.shape[3] / 2), dim=3) for i in range(len(half_split))]
+        return quarter_split
+    
+class PyramidPooling(nn.Module):
+    Alternate Pyramid Pooling for d7 middle pooling layer
     PSEUDOCODE
     CONV2D features, k=1,d=1,s=2
     ResBlock features, k=3
@@ -249,7 +402,6 @@ class PyramidPooling(nn.Module):
 
     It uses a stride of 1 with the normed conv2d:
     https://github.com/feevos/resuneta/blob/49d26563f84c737e07d34edfe30b56c59cbb4203/nn/layers/conv2Dnormed.py#L13
-    '''
 
     def __init__(self, nFeatures, nChannels=3, depth=6):
         super().__init__()
@@ -289,11 +441,11 @@ class PyramidPooling(nn.Module):
         concat = torch.cat((layer_d, layer_b), dim=1)
         out = self.norm(self.conv_out(concat)) # batch norm conv, equivalent to Conv2dNormed in original code
         return out
-        
+'''
+
         
 class ResBlock(nn.Module):
     '''
-    Image reference for ResBlock: https://www.researchgate.net/figure/Flowchart-of-the-resblock-Each-resblock-is-composed-of-a-batch-normalization-a_fig2_330460151
     '''
     def __init__(self, features, kernel = 3, dilation=[1, 3, 15], stride=1, device="cuda"):
         super().__init__()
@@ -339,7 +491,9 @@ class ResBlock(nn.Module):
         else:
             self.normal_side = nn.ModuleList([nn.Sequential(*nn.ModuleList(normal_sides[i])) for i in range(len(normal_sides))])
         
-        
+        '''
+        # Image reference for ResBlock skip: https://www.researchgate.net/figure/Flowchart-of-the-resblock-Each-resblock-is-composed-of-a-batch-normalization-a_fig2_330460151
+
         skip_sides = [
             nn.Conv2d(in_channels=self.f,
                       out_channels=self.f,
@@ -365,28 +519,32 @@ class ResBlock(nn.Module):
             self.skip_side = nn.ModuleList([nn.Sequential(*nn.ModuleList(skip_sides))]) # MUST USE MODULE LIST OR WEIGHTS WON'T MOVE TO DEVICE
         else:
             self.skip_side = nn.ModuleList([nn.Sequential(*nn.ModuleList(skip_sides[i])) for i in range(len(skip_sides))])
-    
+        '''
     def forward(self, x):
-        #normal_out = torch.cat(*[self.normal_side[i](x) for i in range(len(self.dilation))], dim=0)
-        #skip_out = torch.cat([self.skip_side[i](x) for i in range(len(self.dilation))], dim=0)
-        
         # Make all dilations sizes sides and add them together
-        what = self.normal_side[0]
         normal_out = self.normal_side[0](x)
-        skip_out = self.skip_side[0](x)
+        
+        # ResUNet uses modified residual blocks that do not have a skip side... which I realized AFTER writing this
+        #skip_out = self.skip_side[0](x)
         
         for i in range(1, len(self.dilation)):
             normal_out += self.normal_side[i](x)
-            skip_out += self.skip_side[i](x)
+            #skip_out += self.skip_side[i](x)
 
-        add = normal_out + skip_out
-        
+        #add = normal_out + skip_out
+        add = normal_out + x # modified residuals blocks uses the input x as the residual connection w/ no extra layers
         return add
     
     
 if __name__ == '__main__':
-    t = torch.randn([2,3,256,256], dtype=torch.float)
-    pool = ResUNet()
+    device = 'cpu'
+    t = torch.randn([2,1024,8,8], dtype=torch.float)
+    pool = PSP_Pooling(1024).to(device)
     
     out = pool(t)
+    print(out.shape)
+    
+    t = torch.randn([2,3,256,256], dtype=torch.float)
+    resunet = ResUNet()
+    out = resunet(t)
     print(out.shape)
