@@ -1,3 +1,5 @@
+# Code by Nicole
+
 import torch
 from torch.utils.data import DataLoader
 from torch.nn import CrossEntropyLoss
@@ -7,6 +9,7 @@ from dataset import PotsdamDataset
 from models.FastSCNN import FastSCNN
 from models.swinT import swin_tiny as swinT
 from models.resunet import ResUNet
+from models.UNet_NN import UNet
 
 # Code adapted from: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 def train(dataloader, model, loss_fn, optimizer):
@@ -67,6 +70,7 @@ dl_train = DataLoader(ds_train, batch_size, shuffle=True) # Train images in rand
 #model = FastSCNN(num_classes=6)
 #model = swinT(nclass=6, pretrained=True, aux=True, head="mlphead", edge_aux=False)
 model = ResUNet()
+#model = UNet()
 
 # Code reference: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate) # adam optimizer is pretty standard nowadays
