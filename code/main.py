@@ -1,9 +1,6 @@
 import torch
-from torchvision.transforms import transforms
 from torch.utils.data import DataLoader
 from torch.nn import CrossEntropyLoss
-import torchvision.transforms.functional as F
-import numpy as np
 import datetime
 
 from dataset import PotsdamDataset
@@ -11,48 +8,16 @@ from models.FastSCNN import FastSCNN
 from models.swinT import swin_tiny as swinT
 from models.resunet import ResUNet
 
-# Taken from https://github.com/Eladamar/fast_scnn/blob/master/metrics.py
-def pixel_accuracy(pred, mask):
+# Code adapted from: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
+def train(dataloader, model, loss_fn, optimizer):
     '''
-    Gets how many pixels in the prediction matched labels
+    Function for training our models. Saves the model periodically.
 
     INPUTS:
-    pred: The labels your model predicted in shape nBatch x nClasses x Height x Width. May be a list of predictions as well.
-    mask: The real labels in shape nBatch x nClasses x Height x Width
-
-    OUTPUTS:
-    acc: The percentage of pixels that were identified correctly
-    '''
-
-    # Some models output a list of preds, like the swinT with the auxilary head
-    # We just sum those outputs
-    if isinstance(pred, list):
-        list_preds = [pred[i] for i in range(len(pred))]
-        pred = torch.sum(torch.stack(list_preds, dim=0), dim=0)
-        
-    # Each index in the class axis represents a label
-    # a 0 in the array means this pixel is NOT this class
-    # a 1 in the array means this pixel IS this class
-    # A pixel can only be one class
-    # Therefore, argmax finds the appropriate class index, which is our pixel label
-    pred_argmax = torch.argmax(pred, axis=1)
-    mask_argmax = torch.argmax(mask, axis=1)
-
-    # The accuracy sum is all the places where the class labels matched
-    acc_sum = torch.sum(pred_argmax == mask_argmax).item()
-
-    # divide by batch size to get percentage
-    acc_mean = acc_sum / pred.shape[0]
-    image_size = pred.shape[2] * pred.shape[3]
-    acc = float(acc_mean) / (image_size + 1e-10)
-    return acc
-
-# Code reference: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
-def train(dataloader, model, loss_fn, optimizer, success_metric):
-    '''
-    Function for training our model.
-
-    INPUTS:
+    dataloader: The torch dataloader that feeds in your images and masks
+    model: The model to use for image segmentation
+    loss_fn: The loss function to use to update the weights
+    optimizer: The optimizer to use to determine the weight step
     '''
     size = len(dataloader.dataset)
     model.train()
@@ -64,9 +29,9 @@ def train(dataloader, model, loss_fn, optimizer, success_metric):
         pred = model(X)
         
         loss = 0
-        if isinstance(pred, (list, tuple)):
-            for i in range(len(pred)):
-                loss += loss_fn(pred[i], y)
+        if isinstance(pred, (list, tuple)): # some models use auxilary predictions
+            for i in range(len(pred)): # thus, we use all heads to calculate the loss
+                loss += loss_fn(pred[i], y) # we do this by summing the losses
         else:
             loss = loss_fn(pred, y)
                 
@@ -77,46 +42,26 @@ def train(dataloader, model, loss_fn, optimizer, success_metric):
 
         if batch % 10 == 0:
             loss, current = loss.item(), (batch + 1) * len(X)
-            score = success_metric(pred, y)
-            print(f"loss: {loss:>7f}  score: {score:>7f}  [{current:>5d}/{size:>5d}]")
+            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
+        
+        if batch % 1000 == 0:
+            torch.save(model.state_dict(), 'checkpoints/INTERMEDIATE' + str(batch) + model.__class__.__name__ + datetime.datetime.today().strftime("%m_%d_%H"))
             
-    # from https://github.com/Eladamar/fast_scnn/blob/master/main.py
-    torch.save(model.state_dict(), 'checkpoints/' + model.__class__.__name__ + datetime.datetime.today().strftime("%m_%d_%h"))
+    # this line was adapted from https://github.com/Eladamar/fast_scnn/blob/master/main.py
+    torch.save(model.state_dict(), 'checkpoints/' + model.__class__.__name__ + datetime.datetime.today().strftime("%m_%d_%H"))
 
-def test(dataloader, model, loss_fn, success_metric):
-    size = len(dataloader.dataset)
-    num_batches = len(dataloader)
-    model.eval()
-    test_loss, correct = 0, 0
-    with torch.no_grad():
-        for X, y in dataloader:
-            X, y = X.to(device), y.to(device)
-            pred = model(X)
-            if isinstance(pred, (list, tuple)):
-                for i in range(len(pred)):
-                    test_loss += loss_fn(pred[i], y).item()
-    test_loss /= num_batches
-    score = success_metric(pred, y)
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n score: {score:>7f} \n")
-
-# code heavily borrowed from https://github.com/Eladamar/fast_scnn/blob/master/main.py
-
-epochs = 10 # changed epochs from 100 to 10 for time
-batch_size = 2
+# code reference from https://github.com/Eladamar/fast_scnn/blob/master/main.py
+epochs = 10 # max epochs to run, may stop the model sooner if/when we run out of time
+batch_size = 3 # max batch size changes based on model
 learning_rate = 1e-3
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.cuda.empty_cache() # sometimes pytorch doesn't do clear cache between runs, this is a failsafe
 
 # Path to your images. Can use paths relative to your working dir or absolute paths
 train_image_path = '../../data/Potsdam_6k/training/imgs'
-test_image_path = '../../data/Potsdam_6k/validation/imgs'
 
 ds_train = PotsdamDataset(train_image_path) # do transform the training data
-ds_test = PotsdamDataset(test_image_path, False) # do not transform the testing data aside from normalizing
-
 dl_train = DataLoader(ds_train, batch_size, shuffle=True) # Train images in random order 
-dl_test = DataLoader(ds_test, batch_size, shuffle=False) # Test images in fixed order
-
 
 # Leave the model you want to test uncommented
 #model = FastSCNN(num_classes=6)
@@ -126,12 +71,10 @@ model = ResUNet()
 # Code reference: https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate) # adam optimizer is pretty standard nowadays
 loss_fn = CrossEntropyLoss() # all models to use cross entropy loss as their loss function
-success_metric = pixel_accuracy
 
 model.double()
 model.to(device)
 for epoch in range(epochs):
     print('epoch', epoch+1, 'of', epochs)
-    train(dl_train, model, loss_fn, optimizer, success_metric)
-    #test(dl_test, model, loss_fn, success_metric)
+    train(dl_train, model, loss_fn, optimizer)
 

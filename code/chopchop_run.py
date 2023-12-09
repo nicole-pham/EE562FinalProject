@@ -6,7 +6,7 @@ using all the indices corresponding to the lowest 10% of area (i.e. after the ~7
 Area_test = (0.3 * Height) * (0.3 * Width) ~ 0.1 * Height*Width
 """
 
-
+# NOT OUR CODE!!!
 # CODE FROM https://github.com/feevos/resuneta/blob/master/src/chopchop_run.py
 # USED TO PREPROCESS THE IMAGES INTO USABLE IMAGES AND MASKS
 

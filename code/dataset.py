@@ -3,8 +3,6 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import transforms
 import os
 import glob
-from torchvision.transforms import ToPILImage
-import torch.nn.functional as F
 import numpy as np
 
 import random
@@ -51,7 +49,8 @@ class PotsdamDataset(Dataset):
     '''
     def __init__(self, image_dir, transform = True):
         self.image_paths = glob.glob(os.path.join(image_dir, '*npy')) # get image paths (stored as numpy arrays)
-                
+        self.flip = transform
+        
     def __len__(self):
         return len(self.image_paths) # length is how many images we have in the dataset
     
@@ -67,26 +66,11 @@ class PotsdamDataset(Dataset):
         mask_path = mask_path.replace('imgs', 'masks')
         mask = np.load(mask_path)
 
-        if self.transform:
-            # do the flipping transforms
-            img, mask = self.transform(img, mask)
-        else:
-            # only normalize the image
-            img = torch.tensor(img, dtype=torch.float64)
-            mask = torch.tensor(mask, dtype=torch.float64)
-
-            # Essentially doing torch.ToTensor without changing dims since they're already in CxHxW
-            img = torch.tensor(img / 255.0)
-
-            normal_transform = transforms.Compose([
-                transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
-            ])
-
-            img = normal_transform(img)
+        img, mask = self.transform(img, mask, self.flip)
 
         return img, mask # img shape: colorsxheightxwidth, mask shape: class_nxheightxwidth
     
-    def transform(self, img, mask):
+    def transform(self, img, mask, flip=True):
         '''
         Modifies loaded images to being usable for training
 
@@ -98,17 +82,24 @@ class PotsdamDataset(Dataset):
         transformed_img: colorChannelsxHeightxWidth ndarray of the transformed image
         transformed_mask: nClassesxHeightxWidth ndarray of the labels with matching img transform
         '''
+        
+        # Randomly flips images horizontally and/or vertically so the training
+        # doesn't see the exact same images in successive epochs
         affine_transform = transforms.Compose([
             RandomHorizontalFlip(0.5),
             RandomVerticalFlip(0.5)
         ])
         
+        # Takes image from 0 to 1 to -1 to 1
         normal_transform = transforms.Compose([
             transforms.Normalize((0.5,0.5,0.5),(0.5,0.5,0.5))
         ])
         
-        
-        transformed_img, transformed_mask = affine_transform((img, mask))
+        if flip:
+            # Flip the images and masks together
+            transformed_img, transformed_mask = affine_transform((img, mask))
+        else:
+            transformed_mask = mask
 
         # Essentially doing torch.ToTensor without changing dims since they're already in CxHxW
         transformed_img = torch.tensor(transformed_img.copy() / 255.0)
