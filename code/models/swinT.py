@@ -5,6 +5,9 @@
 # Written by Ze Liu, Yutong Lin, Yixuan Wei
 # --------------------------------------------------------
 
+# NOT OUR CODE!!
+# FROM https://github.com/zyxu1996/Efficient-Transformer/blob/main/models/swinT.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,7 +15,8 @@ import torch.utils.checkpoint as checkpoint
 import numpy as np
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import warnings
-from models.head import *
+from models.head.fcn import FCNHead
+from models.head.mlp import MLPHead
 #from tools.heatmap_fun import draw_features
 
 up_kwargs = {'mode': 'bilinear', 'align_corners': False}

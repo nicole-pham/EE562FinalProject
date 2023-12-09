@@ -1,3 +1,6 @@
+# NOT OUR CODE!!
+# FROM https://github.com/zyxu1996/Efficient-Transformer/blob/main/models/head/mlp.py
+
 import torch.nn as nn
 import torch
 from .base_decoder import BaseDecodeHead, resize
