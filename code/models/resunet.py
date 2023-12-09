@@ -1,14 +1,18 @@
+# Code by Nicole, but not my model https://github.com/feevos/resuneta/tree/master
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from timm.models import resnetv2
 import numpy as np
-import math
 
 # mx code adapted to pytorch from https://github.com/feevos/resuneta/tree/master
 class ResUNet(nn.Module):
     '''
+    ResUNet model
     
+    INPUTS:
+    num_classes: Number of classes to identify
+    depth: Number of steps to encode and decode
+    nFilters: Starting amount of filters
     '''
     def __init__(self, num_classes=6, depth=6, nFilters=32):
         super().__init__()
@@ -142,7 +146,7 @@ class ResUNet(nn.Module):
         
         self.out = nn.Softmax(dim=1)
         '''
-        PSEUDOCODE
+        Original layout from paper (does not perfectly match the implementation on the GitHub)
         
         1 layer1 = conv2d, f=32,kernel=1 dialation=1, stride=1
         2 ResBlock = conv2d, f=32, kernel=3 dialation=[1, 3, 15, 31], stride=1
@@ -203,6 +207,12 @@ class ResUNet(nn.Module):
         return out
 
 class Combine(nn.Module):
+    '''
+    Combines two tensors
+    
+    INPUTS:
+    features: Number of features in one tensor
+    '''
     def __init__(self, features):
         super().__init__()
         self.features = features
@@ -221,6 +231,12 @@ class Combine(nn.Module):
         return self.norm(self.conv2d(input2)) # batch norm conv, equivalent to Conv2dNormed in original code
 
 class UpConv(nn.Module):
+    '''
+    Convolution for upsampled images
+    
+    INPUTS:
+    features: Number of output features
+    '''
     def __init__(self, features):
         super().__init__()
         self.output_features = features
@@ -446,14 +462,20 @@ class PyramidPooling(nn.Module):
         
 class ResBlock(nn.Module):
     '''
+    Residual connection convolution
+    
+    INPUTS:
+    features: number of input features
+    kernel: size of kernel
+    dilation: list of dilation sizes
+    stride: size of stride
     '''
-    def __init__(self, features, kernel = 3, dilation=[1, 3, 15], stride=1, device="cuda"):
+    def __init__(self, features, kernel = 3, dilation=[1, 3, 15], stride=1):
         super().__init__()
         self.f = features
         self.kernel = kernel
         self.dilation = dilation
         self.stride = stride
-        self.device = device
         
 
         # NOTE: It's coincidental the dilation is the same as the padding

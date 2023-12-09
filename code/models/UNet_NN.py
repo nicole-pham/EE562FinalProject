@@ -1,4 +1,7 @@
-# TODO Write the network architectures here
+# Code by Sean
+
+# From Nicole: Sean pushed this. He said he wrote it, but he didn't mention his source
+# Based on a web search, I believe he used code from here: https://towardsdatascience.com/cook-your-first-u-net-in-pytorch-b3297a844cf3
 
 import torch
 import torch.nn as nn
