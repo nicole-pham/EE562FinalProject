@@ -101,6 +101,7 @@ class PotsdamDataset(Dataset):
             # Flip the images and masks together
             transformed_img, transformed_mask = affine_transform((img, mask))
         else:
+            transformed_img = img
             transformed_mask = mask
 
         # Essentially doing torch.ToTensor without changing dims since they're already in CxHxW
