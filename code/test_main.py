@@ -43,7 +43,16 @@ def pixel_accuracy(preds, mask):
     acc = float(acc_mean) / (image_size + 1e-10)
     return acc
 
-def test(dataloader, model, loss_fn, success_metric):
+def test(dataloader, model, loss_fn, acc):
+    '''
+    Function to get metrics over validation set
+    
+    INPUTS:
+    dataloader: dataloader with your validation set
+    model: model to test
+    loss_fn: loss function (usually cross entropy loss)
+    acc: function for finding pixel accuracy
+    '''
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
     model.eval()
@@ -55,17 +64,21 @@ def test(dataloader, model, loss_fn, success_metric):
             X, y = X.to(torch.float32), y.to(torch.float32)
             X, y = X.to(device), y.to(device)
             pred = model(X)
+            
+            # sum all the scores
             if isinstance(pred, (list, tuple)):
                 for i in range(len(pred)):
                     test_loss += loss_fn(pred[i], y).item()
-                pixel_accuracy += success_metric(pred[0], y)
+                pixel_accuracy += acc(pred[0], y)
                 f1 += f1_score_metric(pred[0], y)
                 iou += compute_iou(pred[0], y)
             else:
                 test_loss += loss_fn(pred, y).item()
-                pixel_accuracy += success_metric(pred, y)
+                pixel_accuracy += acc(pred, y)
                 f1 += f1_score_metric(pred, y)
                 iou += compute_iou(pred, y)
+                
+    # take average of scores
     test_loss /= num_batches
     pixel_accuracy /= num_batches
     f1 /= num_batches
